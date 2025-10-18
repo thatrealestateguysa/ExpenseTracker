@@ -1,0 +1,478 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { Camera, Upload, DollarSign, FileText, Calendar, Tag, CheckCircle, X, Settings, RefreshCw } from 'lucide-react';
+
+export default function ExpenseTracker() {
+  const [entries, setEntries] = useState([]);
+  const [currentEntry, setCurrentEntry] = useState({
+    type: 'expense',
+    date: new Date().toISOString().split('T')[0],
+    description: '',
+    costCode: '',
+    amount: '',
+    receipt: null,
+    receiptPreview: null
+  });
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [webAppUrl, setWebAppUrl] = useState('https://script.google.com/macros/s/AKfycbyDAy8XBWMpvMLMv1o-jI-ok0gm3KdYFoZe_lz52CNdR_cdwU213MS4qIDUgzpfS7rMTg/exec');
+  const [syncing, setSyncing] = useState(false);
+  const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
+
+  const costCodes = [
+    'Marketing',
+    'Travel',
+    'Office Supplies',
+    'Utilities',
+    'Professional Services',
+    'Equipment',
+    'Maintenance',
+    'Insurance',
+    'Other'
+  ];
+
+  // Load settings from storage
+  useEffect(() => {
+    const savedUrl = localStorage.getItem('sheetsWebAppUrl');
+    if (savedUrl) {
+      setWebAppUrl(savedUrl);
+    } else {
+      // Save the default URL
+      localStorage.setItem('sheetsWebAppUrl', 'https://script.google.com/macros/s/AKfycbyDAy8XBWMpvMLMv1o-jI-ok0gm3KdYFoZe_lz52CNdR_cdwU213MS4qIDUgzpfS7rMTg/exec');
+    }
+  }, []);
+
+  const saveSettings = () => {
+    localStorage.setItem('sheetsWebAppUrl', webAppUrl);
+    setShowSettings(false);
+    alert('Settings saved! Your entries will now sync to Google Sheets.');
+  };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCurrentEntry({
+          ...currentEntry,
+          receipt: file,
+          receiptPreview: reader.result
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const syncToGoogleSheets = async (entry) => {
+    if (!webAppUrl) return false;
+    
+    try {
+      setSyncing(true);
+      const response = await fetch(webAppUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          date: entry.date,
+          type: entry.type,
+          description: entry.description,
+          costCode: entry.costCode,
+          amount: entry.amount,
+          receiptUrl: entry.receiptPreview ? 'Receipt attached' : 'No receipt',
+          timestamp: entry.timestamp
+        })
+      });
+      
+      setSyncing(false);
+      return true;
+    } catch (error) {
+      console.error('Error syncing to Google Sheets:', error);
+      setSyncing(false);
+      return false;
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!currentEntry.description || !currentEntry.amount || !currentEntry.costCode || !currentEntry.receipt) {
+      alert('Please fill in all fields and upload a receipt');
+      return;
+    }
+
+    const newEntry = {
+      ...currentEntry,
+      id: Date.now(),
+      timestamp: new Date().toLocaleString()
+    };
+
+    setEntries([newEntry, ...entries]);
+    
+    // Sync to Google Sheets if configured
+    if (webAppUrl) {
+      await syncToGoogleSheets(newEntry);
+    }
+    
+    setShowSuccess(true);
+    setTimeout(() => setShowSuccess(false), 3000);
+
+    setCurrentEntry({
+      type: 'expense',
+      date: new Date().toISOString().split('T')[0],
+      description: '',
+      costCode: '',
+      amount: '',
+      receipt: null,
+      receiptPreview: null
+    });
+  };
+
+  const removeEntry = (id) => {
+    setEntries(entries.filter(entry => entry.id !== id));
+  };
+
+  const totalExpenses = entries
+    .filter(e => e.type === 'expense')
+    .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+
+  const totalIncome = entries
+    .filter(e => e.type === 'income')
+    .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+
+  return (
+    <div className="min-h-screen bg-gray-100">
+      <div className="bg-white shadow-lg">
+        <div className="max-w-6xl mx-auto px-4 py-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <svg viewBox="280 150 1400 450" className="h-16 w-auto" preserveAspectRatio="xMinYMin meet">
+                <rect x="320" y="173" width="183" height="363" fill="#DC2626"/>
+                <rect x="378" y="228" width="68" height="100" fill="white"/>
+                <rect x="378" y="457" width="125" height="79" fill="white"/>
+                <text x="512" y="380" fontSize="190" fontWeight="900" fill="black" fontFamily="Arial Black, sans-serif">ROPERTY</text>
+                <text x="512" y="535" fontSize="140" fontWeight="900" fill="black" fontFamily="Arial Black, sans-serif" letterSpacing="-2">REVOLUTION</text>
+              </svg>
+              <div>
+                <h2 className="text-xl font-semibold text-gray-700">Expense Tracker</h2>
+                {webAppUrl && (
+                  <p className="text-xs text-green-600 flex items-center gap-1">
+                    <CheckCircle size={12} /> Syncing to Google Sheets
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Settings"
+            >
+              <Settings className="text-gray-600" size={24} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Settings Panel */}
+      {showSettings && (
+        <div className="max-w-6xl mx-auto px-4 py-4">
+          <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-red-600">
+            <h3 className="text-xl font-bold text-gray-800 mb-4">Google Sheets Settings</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Google Apps Script Web App URL
+                </label>
+                <input
+                  type="text"
+                  value={webAppUrl}
+                  onChange={(e) => setWebAppUrl(e.target.value)}
+                  placeholder="https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-red-600 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 mt-2">
+                  Paste your Google Apps Script deployment URL here to enable automatic syncing.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={saveSettings}
+                  className="bg-red-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-red-700 transition-colors"
+                >
+                  Save Settings
+                </button>
+                <button
+                  onClick={() => setShowSettings(false)}
+                  className="bg-gray-200 text-gray-700 px-6 py-2 rounded-lg font-medium hover:bg-gray-300 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        {showSuccess && (
+          <div className="mb-6 bg-green-50 border-2 border-green-500 rounded-lg p-4 flex items-center gap-3">
+            <CheckCircle className="text-green-600" size={24} />
+            <span className="text-green-800 font-medium">
+              Entry saved successfully{webAppUrl && ' and synced to Google Sheets'}!
+            </span>
+          </div>
+        )}
+
+        {syncing && (
+          <div className="mb-6 bg-blue-50 border-2 border-blue-500 rounded-lg p-4 flex items-center gap-3">
+            <RefreshCw className="text-blue-600 animate-spin" size={24} />
+            <span className="text-blue-800 font-medium">Syncing to Google Sheets...</span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-red-600">
+            <div className="text-gray-600 text-sm font-medium mb-1">Total Expenses</div>
+            <div className="text-3xl font-bold text-red-600">
+              R{totalExpenses.toFixed(2)}
+            </div>
+          </div>
+          <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-green-600">
+            <div className="text-gray-600 text-sm font-medium mb-1">Total Income</div>
+            <div className="text-3xl font-bold text-green-600">
+              R{totalIncome.toFixed(2)}
+            </div>
+          </div>
+          <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-black">
+            <div className="text-gray-600 text-sm font-medium mb-1">Net Balance</div>
+            <div className={`text-3xl font-bold ${(totalIncome - totalExpenses) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              R{(totalIncome - totalExpenses).toFixed(2)}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="bg-white rounded-xl shadow-lg p-6 border-t-4 border-red-600">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6">Add New Entry</h2>
+            
+            <div className="space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Entry Type</label>
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => setCurrentEntry({ ...currentEntry, type: 'expense' })}
+                    className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all ${
+                      currentEntry.type === 'expense'
+                        ? 'bg-red-600 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Expense
+                  </button>
+                  <button
+                    onClick={() => setCurrentEntry({ ...currentEntry, type: 'income' })}
+                    className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all ${
+                      currentEntry.type === 'income'
+                        ? 'bg-green-600 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Income
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <Calendar className="inline mr-2" size={16} />
+                  Date
+                </label>
+                <input
+                  type="date"
+                  value={currentEntry.date}
+                  onChange={(e) => setCurrentEntry({ ...currentEntry, date: e.target.value })}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-red-600 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <FileText className="inline mr-2" size={16} />
+                  Description
+                </label>
+                <input
+                  type="text"
+                  value={currentEntry.description}
+                  onChange={(e) => setCurrentEntry({ ...currentEntry, description: e.target.value })}
+                  placeholder="What was this for?"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-red-600 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <Tag className="inline mr-2" size={16} />
+                  Cost Code
+                </label>
+                <select
+                  value={currentEntry.costCode}
+                  onChange={(e) => setCurrentEntry({ ...currentEntry, costCode: e.target.value })}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-red-600 focus:border-transparent"
+                >
+                  <option value="">Select a category</option>
+                  {costCodes.map(code => (
+                    <option key={code} value={code}>{code}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <DollarSign className="inline mr-2" size={16} />
+                  Amount (ZAR)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600 font-semibold">R</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={currentEntry.amount}
+                    onChange={(e) => setCurrentEntry({ ...currentEntry, amount: e.target.value })}
+                    placeholder="0.00"
+                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-red-600 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Receipt Image</label>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => cameraInputRef.current?.click()}
+                    className="flex-1 bg-black text-white py-3 px-4 rounded-lg font-medium hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Camera size={20} />
+                    Take Photo
+                  </button>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex-1 bg-gray-800 text-white py-3 px-4 rounded-lg font-medium hover:bg-gray-700 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Upload size={20} />
+                    Upload
+                  </button>
+                </div>
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                {currentEntry.receiptPreview && (
+                  <div className="mt-4 relative">
+                    <img
+                      src={currentEntry.receiptPreview}
+                      alt="Receipt preview"
+                      className="w-full h-48 object-cover rounded-lg border-2 border-gray-300"
+                    />
+                    <button
+                      onClick={() => setCurrentEntry({ ...currentEntry, receipt: null, receiptPreview: null })}
+                      className="absolute top-2 right-2 bg-red-600 text-white p-2 rounded-full hover:bg-red-700"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={handleSubmit}
+                className="w-full bg-red-600 text-white py-4 px-6 rounded-lg font-bold text-lg hover:bg-red-700 transition-colors shadow-lg"
+              >
+                Save Entry
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-lg p-6 border-t-4 border-black">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6">Recent Entries</h2>
+            
+            {entries.length === 0 ? (
+              <div className="text-center py-12 text-gray-400">
+                <FileText size={48} className="mx-auto mb-3 opacity-50" />
+                <p>No entries yet. Add your first transaction above.</p>
+              </div>
+            ) : (
+              <div className="space-y-4 max-h-[600px] overflow-y-auto">
+                {entries.map(entry => (
+                  <div
+                    key={entry.id}
+                    className="border-2 border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                            entry.type === 'expense' 
+                              ? 'bg-red-100 text-red-700' 
+                              : 'bg-green-100 text-green-700'
+                          }`}>
+                            {entry.type.toUpperCase()}
+                          </span>
+                          <span className="text-xs text-gray-500">{entry.date}</span>
+                        </div>
+                        <h3 className="font-bold text-gray-800">{entry.description}</h3>
+                        <p className="text-sm text-gray-600">Category: {entry.costCode}</p>
+                      </div>
+                      <div className="text-right">
+                        <div className={`text-xl font-bold ${
+                          entry.type === 'expense' ? 'text-red-600' : 'text-green-600'
+                        }`}>
+                          R{parseFloat(entry.amount).toFixed(2)}
+                        </div>
+                        <button
+                          onClick={() => removeEntry(entry.id)}
+                          className="mt-2 text-red-600 hover:text-red-700 text-sm font-medium"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                    {entry.receiptPreview && (
+                      <img
+                        src={entry.receiptPreview}
+                        alt="Receipt"
+                        className="w-full h-32 object-cover rounded border border-gray-300 cursor-pointer hover:opacity-90"
+                        onClick={() => window.open(entry.receiptPreview, '_blank')}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {!webAppUrl && (
+          <div className="mt-8 bg-yellow-50 border-2 border-yellow-400 rounded-xl shadow-lg p-6">
+            <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
+              <Settings size={20} />
+              Setup Google Sheets Integration
+            </h3>
+            <p className="text-gray-700 text-sm mb-3">
+              Click the settings icon (⚙️) in the top right to configure Google Sheets syncing. Follow the instructions in the Google Apps Script artifact to set up the integration.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
